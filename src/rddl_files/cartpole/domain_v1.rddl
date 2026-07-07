@@ -1,0 +1,106 @@
+////////////////////////////////////////////////////////////////////
+// Modified cart-pole domain for BGU RL course HW2, Question 1.
+//
+// Based on the pyRDDLGym-project rddlrepository CartPole_Discrete
+// domain (Barto, Sutton & Anderson, 1983), extended with a third
+// "do nothing" action to avoid needless jittering:
+//   force-side = 0 -> push left  (force = -FORCE-MAG)
+//   force-side = 1 -> push right (force = +FORCE-MAG)
+//   force-side = 2 -> do nothing (force = 0)
+//
+// Reward variant 1 ("sparse"): unchanged +1 per surviving step,
+// identical to the original domain.
+//
+// Original author(s):
+//		Mike Gimelfarb (mgimelfarb@yahoo.ca)
+////////////////////////////////////////////////////////////////////
+domain cart_pole_discrete_v1 {
+
+    requirements = {
+        reward-deterministic
+    };
+
+    pvariables {
+
+    	// forces
+		GRAVITY   : { non-fluent, real, default = 9.8 };        // force of gravity acting down
+		FORCE-MAG : { non-fluent, real, default = 10.0 };		// force applied to the side of the cart
+
+		// cart and pole properties
+		CART-MASS : { non-fluent, real, default = 1.0 };        // mass of the cart
+		POLE-MASS : { non-fluent, real, default = 0.1 };		// mass of the pole
+		POLE-LEN  : { non-fluent, real, default = 0.5 }; 		// half of the pole length
+
+		// other constants
+		TIME-STEP : { non-fluent, real, default = 0.02 }; 		// seconds between state updates
+		POS-LIMIT : { non-fluent, real, default = 2.4 };		// limit of cart position
+		ANG-LIMIT : { non-fluent, real, default = 0.2094395 };	// limit of pole angle
+
+		// interm & derived fluents
+		force : { interm-fluent, real };                       // actual signed force applied to the cart
+		temp : { interm-fluent, real };						// temporary variable
+		acc : { interm-fluent, real };							// position acceleration
+		ang-acc : { interm-fluent, real };						// angular acceleration
+
+		// states
+       	pos    	: { state-fluent, real, default = 0 };          // cart position
+       	ang-pos	: { state-fluent, real, default = 0 };          // pole angle
+       	vel   	: { state-fluent, real, default = 0 };          // cart velocity
+       	ang-vel : { state-fluent, real, default = 0 };          // pole angular velocity
+
+       	// actions
+       	// 0 = push left, 1 = push right, 2 = do nothing
+       	force-side : { action-fluent, int, default = 2 };      	// side to apply force to (or no-op)
+    };
+
+    cpfs {
+		// the actual signed force on the cart: left / right / no force
+		force = if(force-side == 1)
+				 then FORCE-MAG
+				 else if(force-side == 2)
+				 	then 0.0
+				 	else -FORCE-MAG;
+
+		// compute the pole angular acceleration
+		temp = (force + POLE-LEN * POLE-MASS * pow[ang-vel, 2] * sin[ang-pos]) / (CART-MASS + POLE-MASS);
+		ang-acc = (GRAVITY * sin[ang-pos] - cos[ang-pos] * temp) / (
+            POLE-LEN * ((4.0 / 3.0) - (POLE-MASS * pow[cos[ang-pos], 2] / (CART-MASS + POLE-MASS))));
+
+		// compute the cart acceleration
+		acc = temp - (POLE-LEN * POLE-MASS * ang-acc * cos[ang-pos] / (CART-MASS + POLE-MASS));
+
+		// Euler integration formula
+		pos' = pos + TIME-STEP * vel;
+		ang-pos' = ang-pos + TIME-STEP * ang-vel;
+		vel' = vel + TIME-STEP * acc;
+		ang-vel' = ang-vel + TIME-STEP * ang-acc;
+    };
+
+    // R = 1 as long as the pole is upright and the cart is not out of bounds
+    reward = 1.0;
+
+    termination {
+		pos < -POS-LIMIT | pos > POS-LIMIT;
+		ang-pos < -ANG-LIMIT | ang-pos > ANG-LIMIT;
+    };
+
+    state-invariants {
+
+		// state is within limits
+		pos >= -POS-LIMIT;
+		pos <= POS-LIMIT;
+		ang-pos >= -ANG-LIMIT;
+		ang-pos <= ANG-LIMIT;
+
+		// system is physically plausible
+		GRAVITY >= 0 ^ FORCE-MAG >= 0;
+		CART-MASS >= 0 ^ POLE-MASS >= 0 ^ POLE-LEN >= 0;
+		TIME-STEP >= 0 ^ POS-LIMIT >= 0 ^ ANG-LIMIT >= 0;
+    };
+
+    action-preconditions {
+        force-side >= 0;
+		force-side <= 2;
+    };
+
+}
